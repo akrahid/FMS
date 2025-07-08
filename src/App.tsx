@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Camera, Eye, BarChart3, Settings, Download, Menu, X, Maximize2, Minimize2, Play, Pause, RotateCcw, FileText } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import PoseDetection from './components/PoseDetection';
 import ScoreCard from './components/ScoreCard';
 import AssessmentWorkflow from './components/AssessmentWorkflow';
 import ThreeDVisualization from './components/ThreeDVisualization';
 import AssessmentMetricsTable from './components/AssessmentMetricsTable';
 import DropJumpTest from './components/DropJumpTest';
+import VideoUploadAnalyzer from './components/VideoUploadAnalyzer';
+import RecordingManager from './components/RecordingManager';
 import InfoModal from './components/InfoModal';
 import { FMS_TESTS } from './data/fmsTests';
 import { FMSTest, PoseResults, JointAngle, AnnotationData, AssessmentScore, AssessmentMetricResult, DropJumpAssessment } from './types/assessment';
@@ -28,6 +31,8 @@ function App() {
   const [notes, setNotes] = useState<string>('');
   const [showDropJumpTest, setShowDropJumpTest] = useState(false);
   const [dropJumpAssessment, setDropJumpAssessment] = useState<DropJumpAssessment | null>(null);
+  const [showVideoUpload, setShowVideoUpload] = useState(false);
+  const [showRecordingManager, setShowRecordingManager] = useState(false);
 
   useEffect(() => {
     if (currentPose && currentTest) {
@@ -306,6 +311,24 @@ function App() {
                 <span className="hidden sm:inline">Drop Jump</span>
               </button>
 
+              {/* Video Upload Button */}
+              <button
+                onClick={() => setShowVideoUpload(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+              >
+                <Upload size={16} />
+                <span className="hidden sm:inline">Upload Video</span>
+              </button>
+
+              {/* Recording Manager Button */}
+              <button
+                onClick={() => setShowRecordingManager(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+              >
+                <Camera size={16} />
+                <span className="hidden sm:inline">Recordings</span>
+              </button>
+
               {/* Assessment Summary Button */}
               <button
                 onClick={() => setShowSummary(!showSummary)}
@@ -449,8 +472,7 @@ function App() {
                   ) : (
                     <ThreeDVisualization
                       landmarks={currentPose?.landmarks || []}
-                      width={640}
-                      height={480}
+                      className="w-full h-full"
                     />
                   )}
                 </div>
@@ -516,6 +538,35 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Video Upload Modal */}
+      <InfoModal
+        isOpen={showVideoUpload}
+        onClose={() => setShowVideoUpload(false)}
+        title="Video Upload & Analysis"
+      >
+        <VideoUploadAnalyzer 
+          onAnalysisComplete={(results) => {
+            console.log('Video analysis completed:', results);
+            // Handle analysis results
+          }}
+        />
+      </InfoModal>
+
+      {/* Recording Manager Modal */}
+      <InfoModal
+        isOpen={showRecordingManager}
+        onClose={() => setShowRecordingManager(false)}
+        title="Recording Manager"
+      >
+        <RecordingManager
+          isRecording={isRecording}
+          onStartRecording={handleStartRecording}
+          onStopRecording={handleStopRecording}
+          onReset={handleReset}
+          currentTest={currentTest.name}
+        />
+      </InfoModal>
 
       {/* Drop Jump Test Modal */}
       <InfoModal
