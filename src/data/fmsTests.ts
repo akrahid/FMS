@@ -710,4 +710,206 @@ export const FMS_TESTS: FMSTest[] = [
       }
     ]
   }
+  ,
+  {
+    id: 'drop-jump',
+    name: 'Drop Jump Test',
+    description: 'Assesses dynamic knee stability and ACL injury risk during landing. The drop jump test evaluates neuromuscular control, landing mechanics, and bilateral symmetry during a standardized plyometric movement.',
+    instructions: [
+      'Set up 31cm box with dual cameras positioned at 45° angles',
+      'Stand on box with feet shoulder-width apart',
+      'Position arms at shoulder abduction 45°, elbow flexion 90°',
+      'Drop off box (do not jump up)',
+      'Land on both feet simultaneously',
+      'Immediately perform maximum vertical jump',
+      'Complete 3 practice trials, then 9 scored trials',
+      'Rest 10 seconds between trials'
+    ],
+    keyPoints: [
+      'Knee alignment - patella should track over first toe',
+      'Bilateral symmetry - equal weight distribution',
+      'Trunk control - minimal forward/lateral lean',
+      'Arm position - maintain 45° shoulder abduction',
+      'Landing technique - forefoot to heel contact',
+      'No knee valgus collapse during landing phase',
+      'Quick transition to vertical jump',
+      'Consistent landing pattern across trials'
+    ],
+    scoringCriteria: [
+      {
+        score: 3,
+        description: 'Low Risk',
+        criteria: [
+          'Knee valgus ≤10° on all trials',
+          'Bilateral symmetry maintained',
+          'Trunk lean ≤10° in all planes',
+          'Proper arm position maintained',
+          'No compensatory movements'
+        ]
+      },
+      {
+        score: 2,
+        description: 'Moderate Risk',
+        criteria: [
+          'Knee valgus 11-15° on some trials',
+          'Mild bilateral asymmetry',
+          'Trunk lean 11-15°',
+          'Occasional arm position errors',
+          'Minor compensatory patterns'
+        ]
+      },
+      {
+        score: 1,
+        description: 'High Risk',
+        criteria: [
+          'Knee valgus >15° on multiple trials',
+          'Significant bilateral asymmetry',
+          'Trunk lean >15°',
+          'Poor arm position control',
+          'Multiple compensatory movements'
+        ]
+      },
+      {
+        score: 0,
+        description: 'Unable/Pain',
+        criteria: ['Pain during movement', 'Unable to complete test safely']
+      }
+    ],
+    metrics: [
+      {
+        id: 'knee-valgus-3d-left',
+        name: 'Knee Valgus 3D (L)',
+        description: '3D knee valgus angle during landing phase',
+        targetDescription: '≤ 15°',
+        targetMax: 15,
+        unit: '°',
+        isCritical: true,
+        category: 'angle',
+        validationCriteria: {
+          passThreshold: 15,
+          tolerance: 3,
+          colorCoding: {
+            pass: '#10B981',
+            warning: '#F59E0B',
+            fail: '#EF4444'
+          }
+        }
+      },
+      {
+        id: 'knee-valgus-3d-right',
+        name: 'Knee Valgus 3D (R)',
+        description: '3D knee valgus angle during landing phase',
+        targetDescription: '≤ 15°',
+        targetMax: 15,
+        unit: '°',
+        isCritical: true,
+        category: 'angle',
+        validationCriteria: {
+          passThreshold: 15,
+          tolerance: 3,
+          colorCoding: {
+            pass: '#10B981',
+            warning: '#F59E0B',
+            fail: '#EF4444'
+          }
+        }
+      },
+      {
+        id: 'trunk-lean-sagittal',
+        name: 'Trunk Lean (Sagittal)',
+        description: 'Forward/backward trunk lean during landing',
+        targetDescription: '≤ 15°',
+        targetMax: 15,
+        unit: '°',
+        isCritical: false,
+        category: 'angle',
+        validationCriteria: {
+          passThreshold: 15,
+          tolerance: 5,
+          colorCoding: {
+            pass: '#10B981',
+            warning: '#F59E0B',
+            fail: '#EF4444'
+          }
+        }
+      },
+      {
+        id: 'trunk-lean-frontal',
+        name: 'Trunk Lean (Frontal)',
+        description: 'Left/right trunk lean during landing',
+        targetDescription: '≤ 10°',
+        targetMax: 10,
+        unit: '°',
+        isCritical: false,
+        category: 'angle',
+        validationCriteria: {
+          passThreshold: 10,
+          tolerance: 3,
+          colorCoding: {
+            pass: '#10B981',
+            warning: '#F59E0B',
+            fail: '#EF4444'
+          }
+        }
+      },
+      {
+        id: 'bilateral-symmetry',
+        name: 'Bilateral Symmetry',
+        description: 'Left-right movement symmetry index',
+        targetDescription: '≤ 10% difference',
+        targetMax: 10,
+        unit: '%',
+        isCritical: true,
+        category: 'symmetry',
+        validationCriteria: {
+          passThreshold: 10,
+          tolerance: 5,
+          colorCoding: {
+            pass: '#10B981',
+            warning: '#F59E0B',
+            fail: '#EF4444'
+          }
+        }
+      },
+      {
+        id: 'landing-stability',
+        name: 'Landing Stability',
+        description: 'Center of mass control during landing',
+        targetDescription: '≤ 50mm displacement',
+        targetMax: 50,
+        unit: 'mm',
+        isCritical: false,
+        category: 'stability',
+        validationCriteria: {
+          passThreshold: 50,
+          tolerance: 15,
+          colorCoding: {
+            pass: '#10B981',
+            warning: '#F59E0B',
+            fail: '#EF4444'
+          }
+        }
+      },
+      {
+        id: 'arm-position-compliance',
+        name: 'Arm Position Compliance',
+        description: 'Maintenance of proper arm position',
+        targetDescription: '45° ± 10°',
+        targetMin: 35,
+        targetMax: 55,
+        unit: '°',
+        isCritical: false,
+        category: 'alignment',
+        validationCriteria: {
+          passThreshold: 45,
+          tolerance: 10,
+          colorCoding: {
+            pass: '#10B981',
+            warning: '#F59E0B',
+            fail: '#EF4444'
+          }
+        }
+      }
+    ]
+  }
 ];

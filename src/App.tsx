@@ -5,9 +5,10 @@ import ScoreCard from './components/ScoreCard';
 import AssessmentWorkflow from './components/AssessmentWorkflow';
 import ThreeDVisualization from './components/ThreeDVisualization';
 import AssessmentMetricsTable from './components/AssessmentMetricsTable';
+import DropJumpTest from './components/DropJumpTest';
 import InfoModal from './components/InfoModal';
 import { FMS_TESTS } from './data/fmsTests';
-import { FMSTest, PoseResults, JointAngle, AnnotationData, AssessmentScore, AssessmentMetricResult } from './types/assessment';
+import { FMSTest, PoseResults, JointAngle, AnnotationData, AssessmentScore, AssessmentMetricResult, DropJumpAssessment } from './types/assessment';
 import { calculateAllJointAngles, generateAutomaticScore, getDetailedMetricResults } from './utils/poseAnalysis';
 
 function App() {
@@ -25,6 +26,8 @@ function App() {
   const [showMetricsTable, setShowMetricsTable] = useState(false);
   const [cameraSize, setCameraSize] = useState<'small' | 'medium' | 'large' | 'fullscreen'>('large');
   const [notes, setNotes] = useState<string>('');
+  const [showDropJumpTest, setShowDropJumpTest] = useState(false);
+  const [dropJumpAssessment, setDropJumpAssessment] = useState<DropJumpAssessment | null>(null);
 
   useEffect(() => {
     if (currentPose && currentTest) {
@@ -67,6 +70,36 @@ function App() {
     setJointAngles([]);
     setMetricResults([]);
     setNotes('');
+  };
+
+  const handleDropJumpAssessment = (assessment: DropJumpAssessment) => {
+    setDropJumpAssessment(assessment);
+    
+    // Add to assessment scores
+    const score: AssessmentScore = {
+      testId: 'drop-jump',
+      score: assessment.overallRisk === 'low' ? 3 : assessment.overallRisk === 'moderate' ? 2 : 1,
+      automaticScore: assessment.overallRisk === 'low' ? 3 : assessment.overallRisk === 'moderate' ? 2 : 1,
+      notes: `3D Analysis: ${assessment.trials.length} trials, ${assessment.overallRisk} risk`,
+      timestamp: assessment.timestamp,
+      metricResults: [],
+      auditTrail: {
+        originalScore: assessment.overallRisk === 'low' ? 3 : assessment.overallRisk === 'moderate' ? 2 : 1,
+        changes: []
+      }
+    };
+    
+    setAssessmentScores(prev => {
+      const existing = prev.findIndex(s => s.testId === 'drop-jump');
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = score;
+        return updated;
+      }
+      return [...prev, score];
+    });
+    
+    setShowDropJumpTest(false);
   };
 
   const handleTestChange = (test: FMSTest) => {
@@ -262,6 +295,15 @@ function App() {
               >
                 <FileText size={16} />
                 <span className="hidden sm:inline">Metrics</span>
+              </button>
+
+              {/* Drop Jump Test Button */}
+              <button
+                onClick={() => setShowDropJumpTest(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-sm"
+              >
+                <Activity size={16} />
+                <span className="hidden sm:inline">Drop Jump</span>
               </button>
 
               {/* Assessment Summary Button */}
@@ -474,6 +516,15 @@ function App() {
           </div>
         </div>
       </main>
+
+      {/* Drop Jump Test Modal */}
+      <InfoModal
+        isOpen={showDropJumpTest}
+        onClose={() => setShowDropJumpTest(false)}
+        title="3D Drop Jump Test"
+      >
+        <DropJumpTest onAssessmentComplete={handleDropJumpAssessment} />
+      </InfoModal>
 
       {/* Assessment Metrics Table Modal */}
       <InfoModal

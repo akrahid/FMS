@@ -59,6 +59,64 @@ export interface PoseKeypoint {
   confidence?: number;
 }
 
+export interface Vector3D {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface Pose3DResults {
+  landmarks: Vector3D[];
+  confidence: number;
+  timestamp: number;
+  processingLatency: number;
+  triangulationQuality: number;
+}
+
+export interface DropJumpTrial {
+  id: number;
+  timestamp: number;
+  metrics: {
+    kneeValgusLeft: number;
+    kneeValgusRight: number;
+    trunkLeanSagittal: number;
+    trunkLeanFrontal: number;
+    bilateralSymmetry: number;
+    landingStability: number;
+    armPositionCompliance: number;
+  };
+  riskLevel: 'low' | 'moderate' | 'high';
+  confidence: number;
+  landingPhase: {
+    startFrame: number;
+    endFrame: number;
+    impactFrame: number;
+    duration: number;
+  };
+}
+
+export interface DropJumpAssessment {
+  testId: string;
+  trials: DropJumpTrial[];
+  overallRisk: 'low' | 'moderate' | 'high';
+  riskDistribution: {
+    low: number;
+    moderate: number;
+    high: number;
+  };
+  averageMetrics: {
+    kneeValgusLeft: number;
+    kneeValgusRight: number;
+    trunkLeanSagittal: number;
+    trunkLeanFrontal: number;
+    bilateralSymmetry: number;
+    landingStability: number;
+    armPositionCompliance: number;
+  };
+  clinicalRecommendations: string[];
+  timestamp: number;
+}
+
 export interface PoseResults {
   landmarks: PoseKeypoint[];
   timestamp: number;

@@ -1,5 +1,7 @@
 import { PoseKeypoint, JointAngle, AssessmentMetricResult, AssessmentMetricDefinition, SystemPerformanceMetrics } from '../types/assessment';
+import { Vector3D, DropJumpTrial, DropJumpAssessment } from '../types/assessment';
 import { FMS_TESTS } from '../data/fmsTests';
+import { BiomechanicsCalculator } from './biomechanics';
 
 // Performance tracking
 let performanceMetrics: SystemPerformanceMetrics = {
@@ -512,10 +514,157 @@ export function getDetailedMetricResults(testId: string, landmarks: PoseKeypoint
   return results;
 }
 
+export function getDetailedDropJumpMetrics(
+  landmarks3D: Vector3D[],
+  trial: DropJumpTrial
+): AssessmentMetricResult[] {
+  const results: AssessmentMetricResult[] = [];
+  const dropJumpTest = FMS_TESTS.find(t => t.id === 'drop-jump');
+  
+  if (!dropJumpTest || !dropJumpTest.metrics) return [];
+
+  // Landmark indices
+  const LANDMARKS = {
+    LEFT_SHOULDER: 11, RIGHT_SHOULDER: 12,
+    LEFT_HIP: 23, RIGHT_HIP: 24,
+    LEFT_KNEE: 25, RIGHT_KNEE: 26,
+    LEFT_ANKLE: 27, RIGHT_ANKLE: 28,
+    LEFT_FOOT_INDEX: 31, RIGHT_FOOT_INDEX: 32
+  };
+
+  dropJumpTest.metrics.forEach(metric => {
+    let actualValue = 0;
+    let pass = false;
+    let warning = false;
+    let confidence = 0;
+
+    switch (metric.id) {
+      case 'knee-valgus-3d-left':
+        if (BiomechanicsCalculator.hasValidLandmarks(landmarks3D, [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.LEFT_FOOT_INDEX])) {
+          const valgusMetric = BiomechanicsCalculator.calculateKneeValgus3D(
+            landmarks3D[LANDMARKS.LEFT_HIP],
+            landmarks3D[LANDMARKS.LEFT_KNEE],
+            landmarks3D[LANDMARKS.LEFT_ANKLE],
+            landmarks3D[LANDMARKS.LEFT_FOOT_INDEX]
+          );
+          actualValue = valgusMetric.value;
+          confidence = valgusMetric.confidence;
+        }
+        break;
+
+      case 'knee-valgus-3d-right':
+        if (BiomechanicsCalculator.hasValidLandmarks(landmarks3D, [LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE, LANDMARKS.RIGHT_FOOT_INDEX])) {
+          const valgusMetric = BiomechanicsCalculator.calculateKneeValgus3D(
+            landmarks3D[LANDMARKS.RIGHT_HIP],
+            landmarks3D[LANDMARKS.RIGHT_KNEE],
+            landmarks3D[LANDMARKS.RIGHT_ANKLE],
+            landmarks3D[LANDMARKS.RIGHT_FOOT_INDEX]
+          );
+          actualValue = valgusMetric.value;
+          confidence = valgusMetric.confidence;
+        }
+        break;
+
+      case 'trunk-lean-sagittal':
+      case 'trunk-lean-frontal':
+        if (BiomechanicsCalculator.hasValidLandmarks(landmarks3D, [LANDMARKS.LEFT_SHOULDER, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_HIP])) {
+          const trunkLean = BiomechanicsCalculator.calculateTrunkLean3D(
+            landmarks3D[LANDMARKS.LEFT_SHOULDER],
+            landmarks3D[LANDMARKS.RIGHT_SHOULDER],
+            landmarks3D[LANDMARKS.LEFT_HIP],
+            landmarks3D[LANDMARKS.RIGHT_HIP]
+          );
+          
+          if (metric.id === 'trunk-lean-sagittal') {
+            actualValue = trunkLean.sagittal.value;
+            confidence = trunkLean.sagittal.confidence;
+          } else {
+            actualValue = trunkLean.frontal.value;
+            confidence = trunkLean.frontal.confidence;
+          }
+        }
+        break;
+
+      case 'bilateral-symmetry':
+        actualValue = trial.metrics.bilateralSymmetry;
+        confidence = trial.confidence;
+        break;
+
+      case 'landing-stability':
+        actualValue = trial.metrics.landingStability;
+        confidence = trial.confidence;
+        break;
+
+      case 'arm-position-compliance':
+        actualValue = trial.metrics.armPositionCompliance;
+        confidence = trial.confidence;
+        break;
+
+      default:
+        actualValue = 0;
+        confidence = 0;
+    }
+
+    // Enhanced pass/fail logic
+    if (metric.targetMin !== undefined && metric.targetMax !== undefined) {
+      pass = actualValue >= metric.targetMin && actualValue <= metric.targetMax;
+      warning = !pass && actualValue >= (metric.targetMin - metric.validationCriteria.tolerance) && 
+               actualValue <= (metric.targetMax + metric.validationCriteria.tolerance);
+    } else if (metric.targetMax !== undefined) {
+      pass = actualValue <= metric.targetMax;
+      warning = !pass && actualValue <= (metric.targetMax + metric.validationCriteria.tolerance);
+    }
+
+    const deviation = metric.targetMax !== undefined && actualValue > metric.targetMax ?
+      actualValue - metric.targetMax : 0;
+
+    const deviationDirection: '+' | '-' = actualValue > (metric.targetMax || 0) ? '+' : '-';
+
+    results.push({
+      metricId: metric.id,
+      name: metric.name,
+      targetDescription: metric.targetDescription,
+      actualValue: Math.round(actualValue * 10) / 10,
+      unit: metric.unit,
+      pass,
+      warning,
+      isCritical: metric.isCritical,
+      category: metric.category,
+      deviation: Math.round(deviation * 10) / 10,
+      deviationDirection,
+      confidence: Math.round(confidence),
+      timestamp: Date.now()
+    });
+  });
+
+  return results;
+}
+
+export function generateDropJumpScore(assessment: DropJumpAssessment): number {
+  const { overallRisk, riskDistribution, trials } = assessment;
+  
+  if (trials.length === 0) return 0;
+  
+  // Calculate score based on risk distribution
+  const highRiskPercentage = riskDistribution.high / trials.length;
+  const moderateRiskPercentage = riskDistribution.moderate / trials.length;
+  
+  // FMS-style scoring for Drop Jump
+  if (highRiskPercentage >= 0.5) return 1; // High risk
+  if (moderateRiskPercentage >= 0.5 || highRiskPercentage >= 0.3) return 2; // Moderate risk
+  return 3; // Low risk
+}
+
 export function generateAutomaticScore(
   testId: string,
   metricResults: AssessmentMetricResult[]
 ): number {
+  // Handle Drop Jump Test separately
+  if (testId === 'drop-jump') {
+    // This will be called from the Drop Jump component with proper assessment data
+    return 0; // Placeholder - actual scoring done in generateDropJumpScore
+  }
+
   if (metricResults.length === 0) return 0;
 
   const criticalMetrics = metricResults.filter(m => m.isCritical);
