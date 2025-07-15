@@ -115,12 +115,27 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d')!;
 
-      // Set canvas size
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      // Wait for video to load metadata
+      await new Promise<void>((resolve, reject) => {
+        if (video.readyState >= 1) {
+          resolve();
+        } else {
+          video.addEventListener('loadedmetadata', () => resolve(), { once: true });
+          video.addEventListener('error', reject, { once: true });
+          setTimeout(() => reject(new Error('Video load timeout')), 10000);
+        }
+      });
+
+      // Set canvas size after video is loaded
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
 
       // Calculate frame extraction parameters
       const duration = video.duration;
+      if (!duration || duration === 0) {
+        throw new Error('Invalid video duration');
+      }
+      
       const frameRate = 30; // Extract 30 frames per second
       const totalFrames = Math.floor(duration * frameRate);
       const frameInterval = 1 / frameRate;
@@ -134,28 +149,54 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
 
       // Process video frame by frame
       for (let time = 0; time < duration; time += frameInterval) {
-        video.currentTime = time;
-        
-        // Wait for video to seek to the correct time
-        await new Promise<void>((resolve) => {
+        // Set video time and wait for seek
+        await new Promise<void>((resolve, reject) => {
           const onSeeked = () => {
             video.removeEventListener('seeked', onSeeked);
+            video.removeEventListener('error', onError);
             resolve();
           };
-          video.addEventListener('seeked', onSeeked);
+          
+          const onError = () => {
+            video.removeEventListener('seeked', onSeeked);
+            video.removeEventListener('error', onError);
+            reject(new Error('Video seek error'));
+          };
+          
+          video.addEventListener('seeked', onSeeked, { once: true });
+          video.addEventListener('error', onError, { once: true });
+          
+          video.currentTime = time;
+          
+          // Timeout for seek operation
+          setTimeout(() => {
+            video.removeEventListener('seeked', onSeeked);
+            video.removeEventListener('error', onError);
+            resolve(); // Continue even if seek times out
+          }, 1000);
         });
 
         // Draw current frame to canvas
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Get image data for MediaPipe
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        
         // Process with MediaPipe
-        const results = await new Promise<any>((resolve) => {
+        const results = await new Promise<any>((resolve, reject) => {
           if (poseRef.current) {
-            poseRef.current.onResults = resolve;
-            poseRef.current.send({ image: canvas });
+            const timeout = setTimeout(() => {
+              reject(new Error('MediaPipe processing timeout'));
+            }, 5000);
+            
+            poseRef.current.onResults = (results: any) => {
+              clearTimeout(timeout);
+              resolve(results);
+            };
+            
+            try {
+              poseRef.current.send({ image: canvas });
+            } catch (error) {
+              clearTimeout(timeout);
+              reject(error);
+            }
           }
         });
 
@@ -234,7 +275,7 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
 
     } catch (error) {
       console.error('Video analysis error:', error);
-      setError('Failed to analyze video. Please try again.');
+      setError(`Failed to analyze video: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
     } finally {
       setIsAnalyzing(false);
       setAnalysisProgress(null);
