@@ -1,5 +1,6 @@
 import { MotionFrame, MotionRecording, HandLandmarks, Vector3D, JointVelocity, MovementAnalysis, MovementDeviation } from '../types/assessment';
-import { Hands, Pose } from '@mediapipe/hands';
+import { Hands } from '@mediapipe/hands';
+import { Pose } from '@mediapipe/pose';
 
 export class MotionCaptureSystem {
   private isRecording = false;
