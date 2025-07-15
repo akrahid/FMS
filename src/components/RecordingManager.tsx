@@ -1,5 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Play, Pause, Square, Download, Save, Trash2, Clock, Camera, FileVideo } from 'lucide-react';
+import { motionCaptureSystem } from '../utils/motionCapture';
+import { MotionRecording } from '../types/assessment';
 
 interface RecordingManagerProps {
   isRecording: boolean;
@@ -7,6 +9,7 @@ interface RecordingManagerProps {
   onStopRecording: () => void;
   onReset: () => void;
   currentTest: string;
+  onPlaybackRecording?: (recording: MotionRecording) => void;
 }
 
 interface SavedRecording {
@@ -24,13 +27,15 @@ const RecordingManager: React.FC<RecordingManagerProps> = ({
   onStartRecording,
   onStopRecording,
   onReset,
-  currentTest
+  currentTest,
+  onPlaybackRecording
 }) => {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [savedRecordings, setSavedRecordings] = useState<SavedRecording[]>([]);
   const [currentRecording, setCurrentRecording] = useState<Blob | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [recordingName, setRecordingName] = useState('');
+  const [motionRecordings, setMotionRecordings] = useState<MotionRecording[]>([]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -40,7 +45,13 @@ const RecordingManager: React.FC<RecordingManagerProps> = ({
   // Load saved recordings from localStorage on component mount
   React.useEffect(() => {
     loadSavedRecordings();
+    loadMotionRecordings();
   }, []);
+
+  const loadMotionRecordings = () => {
+    const recordings = motionCaptureSystem.getStoredRecordings();
+    setMotionRecordings(recordings);
+  };
 
   const loadSavedRecordings = () => {
     try {
@@ -389,6 +400,89 @@ const RecordingManager: React.FC<RecordingManagerProps> = ({
                 <span>Cancel</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Motion Recordings */}
+      {motionRecordings.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Motion Capture Recordings</h3>
+            <div className="text-sm text-gray-600">
+              {motionRecordings.length} recording{motionRecordings.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {motionRecordings.map((recording) => (
+              <div key={recording.id} className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-purple-600 rounded-lg">
+                    <Camera className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-800">{recording.name}</h4>
+                    <div className="flex items-center space-x-4 text-sm text-gray-600">
+                      <span>{recording.testType}</span>
+                      <span className="flex items-center space-x-1">
+                        <Clock size={12} />
+                        <span>{recording.duration.toFixed(2)}s</span>
+                      </span>
+                      <span>{recording.frames.length} frames</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        recording.metadata.trackingQuality === 'excellent' ? 'bg-green-100 text-green-800' :
+                        recording.metadata.trackingQuality === 'good' ? 'bg-blue-100 text-blue-800' :
+                        recording.metadata.trackingQuality === 'fair' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {recording.metadata.trackingQuality}
+                      </span>
+                      <span>{new Date(recording.timestamp).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  {onPlaybackRecording && (
+                    <button
+                      onClick={() => onPlaybackRecording(recording)}
+                      className="p-2 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors"
+                      title="Play Recording"
+                    >
+                      <Play size={16} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      const bvhData = motionCaptureSystem.exportToBVH(recording);
+                      const blob = new Blob([bvhData], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${recording.name}.bvh`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                    title="Export BVH"
+                  >
+                    <Download size={16} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      const updatedRecordings = motionRecordings.filter(r => r.id !== recording.id);
+                      setMotionRecordings(updatedRecordings);
+                      localStorage.setItem('motionRecordings', JSON.stringify(updatedRecordings));
+                    }}
+                    className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
