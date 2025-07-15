@@ -65,6 +65,60 @@ export interface Vector3D {
   z: number;
 }
 
+export interface HandLandmarks {
+  landmarks: Vector3D[]; // 21 points per hand
+  confidence: number;
+  timestamp: number;
+}
+
+export interface MotionFrame {
+  timestamp: number;
+  bodyLandmarks: Vector3D[];
+  leftHand?: HandLandmarks;
+  rightHand?: HandLandmarks;
+  confidence: number;
+  frameIndex: number;
+}
+
+export interface MotionRecording {
+  id: string;
+  name: string;
+  frames: MotionFrame[];
+  frameRate: number;
+  duration: number;
+  testType: string;
+  timestamp: number;
+  metadata: {
+    totalFrames: number;
+    averageConfidence: number;
+    trackingQuality: 'excellent' | 'good' | 'fair' | 'poor';
+  };
+}
+
+export interface JointVelocity {
+  jointName: string;
+  velocity: Vector3D;
+  speed: number;
+  acceleration: Vector3D;
+}
+
+export interface MovementAnalysis {
+  jointAngles: JointAngle3D[];
+  velocities: JointVelocity[];
+  centerOfMass: Vector3D[];
+  movementQuality: number;
+  deviations: MovementDeviation[];
+  forceVectors: Vector3D[];
+}
+
+export interface MovementDeviation {
+  jointName: string;
+  deviationType: 'angle' | 'velocity' | 'position';
+  severity: 'minor' | 'moderate' | 'major';
+  description: string;
+  frameIndex: number;
+}
+
 export interface Pose3DResults {
   landmarks: Vector3D[];
   confidence: number;

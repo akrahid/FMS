@@ -9,9 +9,11 @@ import AssessmentMetricsTable from './components/AssessmentMetricsTable';
 import DropJumpTest from './components/DropJumpTest';
 import VideoUploadAnalyzer from './components/VideoUploadAnalyzer';
 import RecordingManager from './components/RecordingManager';
+import MotionPlayback from './components/MotionPlayback';
 import InfoModal from './components/InfoModal';
+import { motionCaptureSystem } from './utils/motionCapture';
 import { FMS_TESTS } from './data/fmsTests';
-import { FMSTest, PoseResults, JointAngle, AnnotationData, AssessmentScore, AssessmentMetricResult, DropJumpAssessment } from './types/assessment';
+import { FMSTest, PoseResults, JointAngle, AnnotationData, AssessmentScore, AssessmentMetricResult, DropJumpAssessment, MotionRecording } from './types/assessment';
 import { calculateAllJointAngles, generateAutomaticScore, getDetailedMetricResults } from './utils/poseAnalysis';
 
 function App() {
@@ -33,6 +35,9 @@ function App() {
   const [dropJumpAssessment, setDropJumpAssessment] = useState<DropJumpAssessment | null>(null);
   const [showVideoUpload, setShowVideoUpload] = useState(false);
   const [showRecordingManager, setShowRecordingManager] = useState(false);
+  const [showMotionPlayback, setShowMotionPlayback] = useState(false);
+  const [selectedRecording, setSelectedRecording] = useState<MotionRecording | null>(null);
+  const [isMotionRecording, setIsMotionRecording] = useState(false);
 
   useEffect(() => {
     if (currentPose && currentTest) {
@@ -75,6 +80,22 @@ function App() {
     setJointAngles([]);
     setMetricResults([]);
     setNotes('');
+  };
+
+  const handleMotionRecordingStart = async () => {
+    setIsMotionRecording(true);
+    await motionCaptureSystem.startRecording(currentTest.id);
+  };
+
+  const handleMotionRecordingStop = () => {
+    setIsMotionRecording(false);
+    const recording = motionCaptureSystem.stopRecording();
+    console.log('Motion recording completed:', recording);
+  };
+
+  const handlePlaybackRecording = (recording: MotionRecording) => {
+    setSelectedRecording(recording);
+    setShowMotionPlayback(true);
   };
 
   const handleDropJumpAssessment = (assessment: DropJumpAssessment) => {
@@ -531,6 +552,9 @@ function App() {
                     <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No joint data available</p>
                     <p className="text-xs">Start pose detection to see angles</p>
+                    enableRecording={true}
+                    onRecordingStart={handleMotionRecordingStart}
+                    onRecordingStop={handleMotionRecordingStop}
                   </div>
                 )}
               </div>
@@ -565,8 +589,29 @@ function App() {
           onStopRecording={handleStopRecording}
           onReset={handleReset}
           currentTest={currentTest.name}
+          onPlaybackRecording={handlePlaybackRecording}
         />
       </InfoModal>
+
+      {/* Motion Playback Modal */}
+      {selectedRecording && (
+        <InfoModal
+          isOpen={showMotionPlayback}
+          onClose={() => {
+            setShowMotionPlayback(false);
+            setSelectedRecording(null);
+          }}
+          title="Motion Playback Analysis"
+        >
+          <MotionPlayback
+            recording={selectedRecording}
+            onClose={() => {
+              setShowMotionPlayback(false);
+              setSelectedRecording(null);
+            }}
+          />
+        </InfoModal>
+      )}
 
       {/* Drop Jump Test Modal */}
       <InfoModal
