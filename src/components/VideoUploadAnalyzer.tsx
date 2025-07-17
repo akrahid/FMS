@@ -38,6 +38,9 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
   const [error, setError] = useState<string>('');
   const [previewUrl, setPreviewUrl] = useState<string>('');
 
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,6 +65,7 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
     setSelectedFile(file);
     setError('');
     setAnalysisResults(null);
+    setIsVideoLoading(true);
 
     // Create preview URL
     const url = URL.createObjectURL(file);
@@ -70,6 +74,13 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
     // Load video metadata
     if (videoRef.current) {
       videoRef.current.src = url;
+      videoRef.current.onloadedmetadata = () => {
+        setIsVideoLoading(false);
+      };
+      videoRef.current.onerror = () => {
+        setIsVideoLoading(false);
+        setError('Failed to load video file. Please try a different format.');
+      };
       videoRef.current.load();
     }
   }, []);
@@ -116,15 +127,32 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
       const ctx = canvas.getContext('2d')!;
 
       // Wait for video to load metadata
-      await new Promise<void>((resolve, reject) => {
-        if (video.readyState >= 1) {
-          resolve();
-        } else {
-          video.addEventListener('loadedmetadata', () => resolve(), { once: true });
-          video.addEventListener('error', reject, { once: true });
-          setTimeout(() => reject(new Error('Video load timeout')), 120000);
-        }
-      });
+      if (video.readyState < 1) {
+        await new Promise<void>((resolve, reject) => {
+          const onLoadedMetadata = () => {
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            clearTimeout(timeout);
+            resolve();
+          };
+          
+          const onError = () => {
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            clearTimeout(timeout);
+            reject(new Error('Failed to load video metadata'));
+          };
+          
+          const timeout = setTimeout(() => {
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            reject(new Error('Video metadata load timeout'));
+          }, 30000); // Reduced to 30 seconds
+          
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('error', onError);
+        });
+      }
 
       // Set canvas size after video is loaded
       canvas.width = video.videoWidth;
@@ -149,82 +177,79 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
 
       // Process video frame by frame
       for (let time = 0; time < duration; time += frameInterval) {
-        // Set video time and wait for seek
-        await new Promise<void>((resolve, reject) => {
-          const onSeeked = () => {
-            video.removeEventListener('seeked', onSeeked);
-            video.removeEventListener('error', onError);
-            resolve();
-          };
-          
-          const onError = () => {
-            video.removeEventListener('seeked', onSeeked);
-            video.removeEventListener('error', onError);
-            reject(new Error('Video seek error'));
-          };
-          
-          video.addEventListener('seeked', onSeeked, { once: true });
-          video.addEventListener('error', onError, { once: true });
-          
-          video.currentTime = time;
-          
-          // Timeout for seek operation
-          setTimeout(() => {
-            video.removeEventListener('seeked', onSeeked);
-            video.removeEventListener('error', onError);
-            resolve(); // Continue even if seek times out
-          }, 1000);
-        });
+        // Set video time and wait for seek with improved handling
+        if (Math.abs(video.currentTime - time) > 0.1) {
+          await new Promise<void>((resolve) => {
+            const onSeeked = () => {
+              video.removeEventListener('seeked', onSeeked);
+              clearTimeout(timeout);
+              resolve();
+            };
+            
+            const timeout = setTimeout(() => {
+              video.removeEventListener('seeked', onSeeked);
+              resolve(); // Continue even if seek times out
+            }, 500); // Reduced timeout
+            
+            video.addEventListener('seeked', onSeeked);
+            video.currentTime = time;
+          });
+        }
 
         // Draw current frame to canvas
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         // Process with MediaPipe
-        const results = await new Promise<any>((resolve, reject) => {
-          if (poseRef.current) {
-            const timeout = setTimeout(() => {
-              reject(new Error('MediaPipe processing timeout'));
-            }, 5000);
-            
-            poseRef.current.onResults = (results: any) => {
-              clearTimeout(timeout);
-              resolve(results);
-            };
-            
-            try {
-              poseRef.current.send({ image: canvas });
-            } catch (error) {
-              clearTimeout(timeout);
-              reject(error);
+        try {
+          const results = await new Promise<any>((resolve, reject) => {
+            if (poseRef.current) {
+              const timeout = setTimeout(() => {
+                reject(new Error('MediaPipe processing timeout'));
+              }, 2000); // Reduced timeout
+              
+              poseRef.current.onResults = (results: any) => {
+                clearTimeout(timeout);
+                resolve(results);
+              };
+              
+              try {
+                poseRef.current.send({ image: canvas });
+              } catch (error) {
+                clearTimeout(timeout);
+                reject(error);
+              }
             }
+          });
+
+          if (results.poseLandmarks) {
+            // Convert to our format
+            const landmarks = results.poseLandmarks.map((lm: any) => ({
+              x: lm.x,
+              y: lm.y,
+              z: lm.z,
+              visibility: lm.visibility || 1,
+              confidence: lm.visibility || 1
+            }));
+
+            const poseResult: PoseResults = {
+              landmarks,
+              timestamp: time * 1000,
+              confidence: landmarks.reduce((sum, lm) => sum + lm.confidence, 0) / landmarks.length
+            };
+
+            poseResults.push(poseResult);
+
+            // Calculate joint angles
+            const jointAngles = calculateAllJointAngles(landmarks);
+            jointAnglesArray.push(jointAngles);
+
+            // Calculate metrics for selected test
+            const metricResults = getDetailedMetricResults(selectedTestType, landmarks);
+            metricResultsArray.push(metricResults);
           }
-        });
-
-        if (results.poseLandmarks) {
-          // Convert to our format
-          const landmarks = results.poseLandmarks.map((lm: any) => ({
-            x: lm.x,
-            y: lm.y,
-            z: lm.z,
-            visibility: lm.visibility || 1,
-            confidence: lm.visibility || 1
-          }));
-
-          const poseResult: PoseResults = {
-            landmarks,
-            timestamp: time * 1000,
-            confidence: landmarks.reduce((sum, lm) => sum + lm.confidence, 0) / landmarks.length
-          };
-
-          poseResults.push(poseResult);
-
-          // Calculate joint angles
-          const jointAngles = calculateAllJointAngles(landmarks);
-          jointAnglesArray.push(jointAngles);
-
-          // Calculate metrics for selected test
-          const metricResults = getDetailedMetricResults(selectedTestType, landmarks);
-          metricResultsArray.push(metricResults);
+        } catch (error) {
+          // Skip frame if processing fails
+          console.warn('Skipping frame due to processing error:', error);
         }
 
         currentFrame++;
@@ -392,6 +417,8 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    setIsVideoLoading(false);
+    setIsFullscreen(false);
   };
 
   const formatTime = (ms: number): string => {
@@ -401,7 +428,7 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
   };
 
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${isFullscreen ? 'fixed inset-0 z-50 bg-white overflow-auto p-6' : ''}`}>
       {/* Header */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
@@ -412,6 +439,15 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
               <p className="text-sm text-gray-600">Upload and analyze movement videos with AI pose detection</p>
             </div>
           </div>
+          
+          {isFullscreen && (
+            <button
+              onClick={() => setIsFullscreen(false)}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {/* Test Type Selection */}
@@ -503,11 +539,32 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
       {/* Video Preview */}
       {previewUrl && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Video Preview</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-800">Video Preview</h3>
+            <button
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              className="flex items-center space-x-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+              <span>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+            </button>
+          </div>
+          
+          {isVideoLoading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                <span className="text-gray-600">Loading video...</span>
+              </div>
+            </div>
+          )}
+          
           <div className="relative bg-black rounded-lg overflow-hidden">
             <video
               ref={videoRef}
-              className="w-full h-auto max-h-96"
+              className={`w-full h-auto ${isFullscreen ? 'max-h-[70vh]' : 'max-h-96'}`}
               controls
               preload="metadata"
             />
@@ -522,25 +579,42 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
       {/* Analysis Progress */}
       {analysisProgress && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-800">Analysis Progress</h3>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <Clock size={16} />
-              <span>ETA: {formatTime(analysisProgress.estimatedTimeRemaining)}</span>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800">Analysis Progress</h3>
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <Clock size={16} />
+                <span>ETA: {formatTime(analysisProgress.estimatedTimeRemaining)}</span>
+              </div>
             </div>
-          </div>
-          
-          <div className="space-y-3">
+            
             <div className="flex justify-between text-sm text-gray-600">
               <span>Frame {analysisProgress.currentFrame} of {analysisProgress.totalFrames}</span>
               <span>{analysisProgress.percentage.toFixed(1)}%</span>
             </div>
             
-            <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
               <div
-                className="bg-purple-600 h-3 rounded-full transition-all duration-300"
+                className="bg-gradient-to-r from-purple-500 to-blue-500 h-full rounded-full transition-all duration-300 relative"
                 style={{ width: `${analysisProgress.percentage}%` }}
-              />
+              >
+                <div className="absolute inset-0 bg-white bg-opacity-20 animate-pulse"></div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-4 text-center text-sm">
+              <div>
+                <div className="font-semibold text-purple-600">{analysisProgress.currentFrame}</div>
+                <div className="text-gray-500">Current Frame</div>
+              </div>
+              <div>
+                <div className="font-semibold text-blue-600">{analysisProgress.percentage.toFixed(1)}%</div>
+                <div className="text-gray-500">Complete</div>
+              </div>
+              <div>
+                <div className="font-semibold text-green-600">{formatTime(analysisProgress.estimatedTimeRemaining)}</div>
+                <div className="text-gray-500">Remaining</div>
+              </div>
             </div>
           </div>
         </div>

@@ -65,6 +65,7 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
   const [pose, setPose] = useState<Pose | null>(null);
   const [camera, setCamera] = useState<Camera | null>(null);
   const [error, setError] = useState<string>('');
+  const [isCameraStarted, setIsCameraStarted] = useState(false);
   const [performanceStats, setPerformanceStats] = useState({
     fps: 0,
     latency: 0,
@@ -77,7 +78,7 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
   const processingTimesRef = useRef<number[]>([]);
 
   useEffect(() => {
-    const initializePose = async () => {
+    const initializePose = async (startCamera = false) => {
       if (!videoRef.current || !canvasRef.current) return;
 
       try {
@@ -120,7 +121,12 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
         });
 
         setCamera(cameraInstance);
-        await cameraInstance.start();
+        
+        if (startCamera) {
+          await cameraInstance.start();
+          setIsCameraStarted(true);
+        }
+        
         setIsInitialized(true);
 
         // Start FPS tracking
@@ -164,6 +170,25 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
       }
     };
   }, []);
+
+  const startCamera = async () => {
+    if (camera && !isCameraStarted) {
+      try {
+        await camera.start();
+        setIsCameraStarted(true);
+      } catch (error) {
+        console.error('Failed to start camera:', error);
+        setError('Failed to start camera. Please check permissions and try again.');
+      }
+    }
+  };
+
+  const stopCamera = () => {
+    if (camera && isCameraStarted) {
+      camera.stop();
+      setIsCameraStarted(false);
+    }
+  };
 
   const onResults = (results: Results) => {
     const canvas = canvasRef.current;
@@ -384,12 +409,32 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
         height={720}
       />
       
-      {!isInitialized && !error && (
+      {(!isInitialized || !isCameraStarted) && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
           <div className="text-white text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
-            <p className="text-lg font-semibold">Initializing clinical pose detection...</p>
-            <p className="text-sm text-gray-300 mt-2">Loading enhanced MediaPipe models...</p>
+            {!isInitialized ? (
+              <>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
+                <p className="text-lg font-semibold">Initializing clinical pose detection...</p>
+                <p className="text-sm text-gray-300 mt-2">Loading enhanced MediaPipe models...</p>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <p className="text-lg font-semibold mb-4">Camera Ready</p>
+                <button
+                  onClick={startCamera}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+                >
+                  Start Camera
+                </button>
+                <p className="text-sm text-gray-300 mt-2">Click to begin pose detection</p>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -409,7 +454,7 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
         </div>
       )}
       
-      {isRecording && isInitialized && (
+      {isRecording && isCameraStarted && (
         <div className="absolute top-4 left-4 flex items-center space-x-2 bg-black bg-opacity-50 px-3 py-2 rounded-lg">
           <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
           <span className="text-white font-semibold">Clinical Recording</span>
@@ -417,7 +462,7 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
       )}
 
       {/* Enhanced Performance Metrics */}
-      {isInitialized && (
+      {isCameraStarted && (
         <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white p-3 rounded-lg text-sm space-y-1">
           <p className="font-semibold text-blue-300">Clinical MediaPipe Pose Detection</p>
           <div className="grid grid-cols-2 gap-2 text-xs">
@@ -455,6 +500,14 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
           </div>
           <p className="text-xs text-yellow-300">Enhanced confidence tracking • Goniometer-grade accuracy</p>
           {mirrorCamera && <p className="text-xs text-purple-300">Camera mirrored for natural movement</p>}
+          <div className="flex items-center space-x-2 mt-2">
+            <button
+              onClick={stopCamera}
+              className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 transition-colors"
+            >
+              Stop Camera
+            </button>
+          </div>
         </div>
       )}
     </div>
