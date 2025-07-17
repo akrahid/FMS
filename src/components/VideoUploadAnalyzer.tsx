@@ -122,7 +122,7 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
         } else {
           video.addEventListener('loadedmetadata', () => resolve(), { once: true });
           video.addEventListener('error', reject, { once: true });
-          setTimeout(() => reject(new Error('Video load timeout')), 60000);
+          setTimeout(() => reject(new Error('Video load timeout')), 120000);
         }
       });
 
