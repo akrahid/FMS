@@ -147,7 +147,7 @@ const VideoUploadAnalyzer: React.FC<VideoUploadAnalyzerProps> = ({ onAnalysisCom
             video.removeEventListener('loadedmetadata', onLoadedMetadata);
             video.removeEventListener('error', onError);
             reject(new Error('Video metadata load timeout'));
-          }, 30000); // Reduced to 30 seconds
+          }, 120000); // Increased to 120 seconds (2 minutes)
           
           video.addEventListener('loadedmetadata', onLoadedMetadata);
           video.addEventListener('error', onError);
