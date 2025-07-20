@@ -259,12 +259,12 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
     }
     
     // Draw the video frame
-    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(poseResults.image, 0, 0, canvas.width, canvas.height);
     
     if (poseResults.poseLandmarks) {
       // Calculate average confidence
       const avgConfidence = poseResults.poseLandmarks.reduce((sum, landmark) => 
-        sum + (landmark.visibility || 0), 0) / results.poseLandmarks.length;
+        sum + (landmark.visibility || 0), 0) / poseResults.poseLandmarks.length;
       
       setPerformanceStats(prev => ({
         ...prev,
