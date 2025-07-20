@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { PoseKeypoint } from '../types/assessment';
 import { Maximize2, Minimize2, RotateCcw, Eye, Settings, Play, Pause, Download } from 'lucide-react';
 
@@ -27,12 +28,13 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const landmarkMeshesRef = useRef<THREE.Mesh[]>([]);
   const connectionLinesRef = useRef<THREE.Line[]>([]);
   const animationIdRef = useRef<number | null>(null);
   
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [viewMode, setViewMode] = useState<'skeleton' | 'points' | 'both' | 'mesh'>('both');
+  const [viewMode, setViewMode] = useState<'skeleton' | 'points' | 'both' | 'mesh' | 'body-mesh'>('both');
   const [autoRotate, setAutoRotate] = useState(false);
   const [showVelocity, setShowVelocity] = useState(false);
   const [showTrails, setShowTrails] = useState(false);
@@ -103,6 +105,13 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     updatePose();
   }, [landmarks, viewMode, showVelocity, showTrails]);
 
+  // Update controls when autoRotate changes
+  useEffect(() => {
+    if (controlsRef.current) {
+      controlsRef.current.autoRotate = autoRotate;
+    }
+  }, [autoRotate]);
+
   const initializeScene = () => {
     if (!mountRef.current) return;
 
@@ -168,79 +177,23 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     axesHelper.position.set(-2, -1, -2);
     scene.add(axesHelper);
 
-    // Mouse controls
-    setupMouseControls();
-  };
+    // Enhanced OrbitControls for better 3D navigation
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = false;
+    controls.minDistance = 1;
+    controls.maxDistance = 20;
+    controls.maxPolarAngle = Math.PI;
+    controls.autoRotate = autoRotate;
+    controls.autoRotateSpeed = 2.0;
+    controlsRef.current = controls;
 
-  const setupMouseControls = () => {
-    if (!rendererRef.current || !cameraRef.current) return;
-
-    const canvas = rendererRef.current.domElement;
-    let isMouseDown = false;
-    let mouseX = 0;
-    let mouseY = 0;
-    let targetRotationX = 0;
-    let targetRotationY = 0;
-    let currentRotationX = 0;
-    let currentRotationY = 0;
-
-    const handleMouseDown = (event: MouseEvent) => {
-      isMouseDown = true;
-      mouseX = event.clientX;
-      mouseY = event.clientY;
-      canvas.style.cursor = 'grabbing';
-    };
-
-    const handleMouseUp = () => {
-      isMouseDown = false;
-      canvas.style.cursor = 'grab';
-    };
-
-    const handleMouseMove = (event: MouseEvent) => {
-      if (!isMouseDown || !cameraRef.current) return;
-      
-      const deltaX = event.clientX - mouseX;
-      const deltaY = event.clientY - mouseY;
-      
-      targetRotationY += deltaX * 0.01;
-      targetRotationX += deltaY * 0.01;
-      targetRotationX = Math.max(-Math.PI/2, Math.min(Math.PI/2, targetRotationX));
-      
-      mouseX = event.clientX;
-      mouseY = event.clientY;
-    };
-
-    const handleWheel = (event: WheelEvent) => {
-      if (!cameraRef.current) return;
-      
-      event.preventDefault();
-      const delta = event.deltaY * 0.001;
-      cameraRef.current.position.z += delta;
-      cameraRef.current.position.z = Math.max(1, Math.min(10, cameraRef.current.position.z));
-    };
-
-    // Smooth camera rotation
-    const updateCameraRotation = () => {
-      if (!cameraRef.current) return;
-      
-      currentRotationX += (targetRotationX - currentRotationX) * 0.1;
-      currentRotationY += (targetRotationY - currentRotationY) * 0.1;
-      
-      const radius = cameraRef.current.position.z;
-      cameraRef.current.position.x = Math.sin(currentRotationY) * Math.cos(currentRotationX) * radius;
-      cameraRef.current.position.y = Math.sin(currentRotationX) * radius;
-      cameraRef.current.position.z = Math.cos(currentRotationY) * Math.cos(currentRotationX) * radius;
-      cameraRef.current.lookAt(0, 0, 0);
-    };
-
-    canvas.addEventListener('mousedown', handleMouseDown);
-    canvas.addEventListener('mouseup', handleMouseUp);
-    canvas.addEventListener('mousemove', handleMouseMove);
-    canvas.addEventListener('wheel', handleWheel, { passive: false });
-    canvas.style.cursor = 'grab';
-
-    // Store the update function for animation loop
-    (canvas as any).updateCameraRotation = updateCameraRotation;
+    // Add control instructions
+    console.log('3D Navigation Controls:');
+    console.log('- Left click + drag: Rotate');
+    console.log('- Right click + drag: Pan');
+    console.log('- Scroll: Zoom');
   };
 
   const updatePose = () => {
@@ -270,6 +223,21 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     // Create mesh representation
     if (viewMode === 'mesh') {
       createMeshRepresentation();
+    }
+
+    // Create detailed body mesh
+    if (viewMode === 'body-mesh') {
+      createDetailedBodyMesh();
+    }
+
+    // Render hand landmarks if available
+    if (landmarks.leftHandLandmarks || landmarks.rightHandLandmarks) {
+      renderHandLandmarks();
+    }
+
+    // Render face mesh if available
+    if (landmarks.faceLandmarks) {
+      renderFaceMesh();
     }
 
     // Show velocity vectors
@@ -450,6 +418,219 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     }
   };
 
+  const createDetailedBodyMesh = () => {
+    if (!sceneRef.current || landmarks.length < 33) return;
+
+    const scene = sceneRef.current;
+    
+    // Create a more detailed body mesh using triangulation
+    const bodyParts = [
+      // Torso
+      { indices: [11, 12, 23, 24], color: 0x4ECDC4 },
+      // Left arm
+      { indices: [11, 13, 15], color: 0xFF6B6B },
+      // Right arm  
+      { indices: [12, 14, 16], color: 0xFF6B6B },
+      // Left leg
+      { indices: [23, 25, 27], color: 0xA8E6CF },
+      // Right leg
+      { indices: [24, 26, 28], color: 0xA8E6CF }
+    ];
+
+    bodyParts.forEach(part => {
+      const positions = [];
+      const validIndices = [];
+      
+      part.indices.forEach(index => {
+        if (landmarks[index] && landmarks[index].visibility > 0.5) {
+          positions.push(
+            (landmarks[index].x - 0.5) * 4,
+            -(landmarks[index].y - 0.5) * 4,
+            landmarks[index].z * 2
+          );
+          validIndices.push(index);
+        }
+      });
+
+      if (positions.length >= 9) { // At least 3 points for a triangle
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        
+        // Create triangular faces
+        const indices = [];
+        for (let i = 0; i < validIndices.length - 2; i++) {
+          indices.push(0, i + 1, i + 2);
+        }
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+        
+        const material = new THREE.MeshPhongMaterial({
+          color: part.color,
+          transparent: true,
+          opacity: 0.7,
+          side: THREE.DoubleSide,
+          shininess: 60
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        landmarkMeshesRef.current.push(mesh);
+      }
+    });
+  };
+
+  const renderHandLandmarks = () => {
+    if (!sceneRef.current) return;
+
+    const scene = sceneRef.current;
+
+    // Render left hand
+    if (landmarks.leftHandLandmarks) {
+      renderSingleHand(landmarks.leftHandLandmarks.landmarks, 0xFF6B6B, 'Left');
+    }
+
+    // Render right hand
+    if (landmarks.rightHandLandmarks) {
+      renderSingleHand(landmarks.rightHandLandmarks.landmarks, 0x4ECDC4, 'Right');
+    }
+  };
+
+  const renderSingleHand = (handLandmarks: PoseKeypoint[], color: number, side: string) => {
+    if (!sceneRef.current) return;
+
+    const scene = sceneRef.current;
+
+    // Hand connections (simplified)
+    const handConnections = [
+      [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8], // Index
+      [0, 9], [9, 10], [10, 11], [11, 12], // Middle
+      [0, 13], [13, 14], [14, 15], [15, 16], // Ring
+      [0, 17], [17, 18], [18, 19], [19, 20], // Pinky
+      [5, 9], [9, 13], [13, 17] // Palm
+    ];
+
+    // Render hand landmarks as small spheres
+    handLandmarks.forEach((landmark, index) => {
+      if (landmark.visibility > 0.5) {
+        const geometry = new THREE.SphereGeometry(0.015, 12, 12);
+        const material = new THREE.MeshPhongMaterial({ 
+          color,
+          transparent: true,
+          opacity: 0.8
+        });
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.set(
+          (landmark.x - 0.5) * 4,
+          -(landmark.y - 0.5) * 4,
+          landmark.z * 2
+        );
+        sphere.userData.isFrameObject = true;
+        scene.add(sphere);
+        landmarkMeshesRef.current.push(sphere);
+      }
+    });
+
+    // Render hand connections
+    handConnections.forEach(([startIdx, endIdx]) => {
+      if (handLandmarks[startIdx] && handLandmarks[endIdx] &&
+          handLandmarks[startIdx].visibility > 0.5 && handLandmarks[endIdx].visibility > 0.5) {
+        
+        const startPos = new THREE.Vector3(
+          (handLandmarks[startIdx].x - 0.5) * 4,
+          -(handLandmarks[startIdx].y - 0.5) * 4,
+          handLandmarks[startIdx].z * 2
+        );
+        
+        const endPos = new THREE.Vector3(
+          (handLandmarks[endIdx].x - 0.5) * 4,
+          -(handLandmarks[endIdx].y - 0.5) * 4,
+          handLandmarks[endIdx].z * 2
+        );
+
+        const direction = new THREE.Vector3().subVectors(endPos, startPos);
+        const length = direction.length();
+        
+        const geometry = new THREE.CylinderGeometry(0.008, 0.008, length, 8);
+        const material = new THREE.MeshPhongMaterial({ 
+          color,
+          transparent: true,
+          opacity: 0.7
+        });
+        
+        const cylinder = new THREE.Mesh(geometry, material);
+        cylinder.position.copy(startPos).add(endPos).multiplyScalar(0.5);
+        cylinder.lookAt(endPos);
+        cylinder.rotateX(Math.PI / 2);
+        
+        scene.add(cylinder);
+        connectionLinesRef.current.push(cylinder as any);
+      }
+    });
+  };
+
+  const renderFaceMesh = () => {
+    if (!sceneRef.current || !landmarks.faceLandmarks) return;
+
+    const scene = sceneRef.current;
+    const faceLandmarks = landmarks.faceLandmarks.landmarks;
+
+    // Render face landmarks as very small points
+    faceLandmarks.forEach((landmark, index) => {
+      if (landmark.visibility > 0.5) {
+        const geometry = new THREE.SphereGeometry(0.005, 8, 8);
+        const material = new THREE.MeshPhongMaterial({ 
+          color: 0xFFD700,
+          transparent: true,
+          opacity: 0.6
+        });
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.set(
+          (landmark.x - 0.5) * 4,
+          -(landmark.y - 0.5) * 4,
+          landmark.z * 2
+        );
+        sphere.userData.isFrameObject = true;
+        scene.add(sphere);
+        landmarkMeshesRef.current.push(sphere);
+      }
+    });
+
+    // Create a simplified face mesh using key landmarks
+    if (faceLandmarks.length > 100) {
+      const keyFaceIndices = [10, 151, 9, 8, 168, 6, 197, 195, 5, 4, 1, 19, 94, 125]; // Key face outline points
+      const positions = [];
+      
+      keyFaceIndices.forEach(index => {
+        if (faceLandmarks[index]) {
+          positions.push(
+            (faceLandmarks[index].x - 0.5) * 4,
+            -(faceLandmarks[index].y - 0.5) * 4,
+            faceLandmarks[index].z * 2
+          );
+        }
+      });
+
+      if (positions.length >= 9) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        
+        const material = new THREE.MeshPhongMaterial({
+          color: 0xFFE4B5,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.DoubleSide
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+        landmarkMeshesRef.current.push(mesh);
+      }
+    }
+  };
+
   const createVelocityVectors = () => {
     if (!sceneRef.current || previousLandmarksRef.current.length === 0) return;
 
@@ -562,20 +743,12 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
     const animate = () => {
       animationIdRef.current = requestAnimationFrame(animate);
       
+      // Update controls
+      if (controlsRef.current) {
+        controlsRef.current.update();
+      }
+      
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
-        // Auto rotation
-        if (autoRotate) {
-          cameraRef.current.position.x = Math.sin(Date.now() * 0.001) * 3;
-          cameraRef.current.position.z = Math.cos(Date.now() * 0.001) * 3;
-          cameraRef.current.lookAt(0, 0, 0);
-        } else {
-          // Manual camera rotation
-          const canvas = rendererRef.current.domElement;
-          if ((canvas as any).updateCameraRotation) {
-            (canvas as any).updateCameraRotation();
-          }
-        }
-        
         rendererRef.current.render(sceneRef.current, cameraRef.current);
       }
     };
@@ -598,9 +771,10 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
   };
 
   const resetCamera = () => {
-    if (cameraRef.current) {
+    if (cameraRef.current && controlsRef.current) {
       cameraRef.current.position.set(0, 0, 3);
       cameraRef.current.lookAt(0, 0, 0);
+      controlsRef.current.reset();
     }
   };
 
@@ -697,7 +871,7 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
       <div className="absolute top-4 right-4 z-10">
         <div className="bg-black bg-opacity-80 rounded-lg p-3 backdrop-blur-sm">
           <div className="flex flex-wrap gap-2 mb-3">
-            {(['skeleton', 'points', 'both', 'mesh'] as const).map((mode) => (
+            {(['skeleton', 'points', 'both', 'mesh', 'body-mesh'] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
@@ -707,7 +881,7 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
                     : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
                 }`}
               >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                {mode === 'body-mesh' ? 'Body Mesh' : mode.charAt(0).toUpperCase() + mode.slice(1)}
               </button>
             ))}
           </div>
@@ -732,6 +906,12 @@ const ThreeDVisualization: React.FC<ThreeDVisualizationProps> = ({
               />
               <span>Motion Trails</span>
             </label>
+            <div className="text-xs text-gray-400 mt-2">
+              <p><strong>Navigation:</strong></p>
+              <p>• Left drag: Rotate</p>
+              <p>• Right drag: Pan</p>
+              <p>• Scroll: Zoom</p>
+            </div>
           </div>
         </div>
       </div>

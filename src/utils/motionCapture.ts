@@ -160,6 +160,7 @@ export class MotionCaptureSystem {
   }
 
   private calculateFrameConfidence(poseResults: any, handResults: any): number {
+  }
   private calculateFrameConfidence(poseResults: any, handResults: any, faceResults: any): number {
     let totalConfidence = 0;
     let count = 0;
