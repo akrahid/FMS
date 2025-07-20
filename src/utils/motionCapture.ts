@@ -1,6 +1,7 @@
 import { MotionFrame, MotionRecording, HandLandmarks, Vector3D, JointVelocity, MovementAnalysis, MovementDeviation } from '../types/assessment';
 import { Hands } from '@mediapipe/hands';
 import { Pose } from '@mediapipe/pose';
+import { FaceMesh } from '@mediapipe/face_mesh';
 
 export class MotionCaptureSystem {
   private isRecording = false;
@@ -10,6 +11,7 @@ export class MotionCaptureSystem {
   private frameIndex = 0;
   private poseDetector: Pose | null = null;
   private handsDetector: Hands | null = null;
+  private faceMeshDetector: FaceMesh | null = null;
 
   constructor() {
     this.initializeDetectors();
@@ -39,6 +41,18 @@ export class MotionCaptureSystem {
       modelComplexity: 1,
       minDetectionConfidence: 0.8,
       minTrackingConfidence: 0.8
+    });
+
+    // Initialize MediaPipe FaceMesh for detailed facial tracking
+    this.faceMeshDetector = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    this.faceMeshDetector.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
     });
   }
 
@@ -91,12 +105,18 @@ export class MotionCaptureSystem {
         this.handsDetector!.send({ image: videoElement });
       });
 
+      // Process face mesh landmarks
+      const faceResults = await new Promise<any>((resolve) => {
+        this.faceMeshDetector!.onResults = resolve;
+        this.faceMeshDetector!.send({ image: videoElement });
+      });
+
       const frame: MotionFrame = {
         timestamp,
         bodyLandmarks: this.convertPoseLandmarks(poseResults.poseLandmarks || []),
         leftHand: this.extractHandLandmarks(handResults, 'Left'),
         rightHand: this.extractHandLandmarks(handResults, 'Right'),
-        confidence: this.calculateFrameConfidence(poseResults, handResults),
+        confidence: this.calculateFrameConfidence(poseResults, handResults, faceResults),
         frameIndex: this.frameIndex++
       };
 
@@ -140,6 +160,7 @@ export class MotionCaptureSystem {
   }
 
   private calculateFrameConfidence(poseResults: any, handResults: any): number {
+  private calculateFrameConfidence(poseResults: any, handResults: any, faceResults: any): number {
     let totalConfidence = 0;
     let count = 0;
 
@@ -156,6 +177,14 @@ export class MotionCaptureSystem {
         (sum: number, hand: any) => sum + hand.score, 0
       ) / handResults.multiHandedness.length;
       totalConfidence += handConfidence;
+      count++;
+    }
+
+    if (faceResults.multiFaceLandmarks && faceResults.multiFaceLandmarks.length > 0) {
+      const faceConfidence = faceResults.multiFaceLandmarks[0].reduce(
+        (sum: number, landmark: any) => sum + (landmark.visibility || 1), 0
+      ) / faceResults.multiFaceLandmarks[0].length;
+      totalConfidence += faceConfidence;
       count++;
     }
 

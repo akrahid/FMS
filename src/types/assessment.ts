@@ -173,8 +173,22 @@ export interface DropJumpAssessment {
 
 export interface PoseResults {
   landmarks: PoseKeypoint[];
+  leftHandLandmarks?: HandLandmarks;
+  rightHandLandmarks?: HandLandmarks;
+  faceLandmarks?: FaceLandmarks;
   timestamp: number;
   processingLatency?: number;
+  confidence: number;
+}
+
+export interface HandLandmarks {
+  landmarks: PoseKeypoint[];
+  confidence: number;
+  handedness: 'Left' | 'Right';
+}
+
+export interface FaceLandmarks {
+  landmarks: PoseKeypoint[];
   confidence: number;
 }
 

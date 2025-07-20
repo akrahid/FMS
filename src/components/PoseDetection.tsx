@@ -1,8 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Camera } from '@mediapipe/camera_utils';
 import { Pose, Results } from '@mediapipe/pose';
+import { Hands } from '@mediapipe/hands';
+import { FaceMesh } from '@mediapipe/face_mesh';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
-import { POSE_CONNECTIONS, POSE_LANDMARKS } from '@mediapipe/pose';
+import { POSE_CONNECTIONS } from '@mediapipe/pose';
+import { HAND_CONNECTIONS } from '@mediapipe/hands';
+import { FACEMESH_TESSELATION } from '@mediapipe/face_mesh';
 import { PoseResults, JointAngle, AnnotationData } from '../types/assessment';
 import { calculateAllJointAngles, updatePerformanceMetrics } from '../utils/poseAnalysis';
 
@@ -63,6 +67,8 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [pose, setPose] = useState<Pose | null>(null);
+  const [hands, setHands] = useState<Hands | null>(null);
+  const [faceMesh, setFaceMesh] = useState<FaceMesh | null>(null);
   const [camera, setCamera] = useState<Camera | null>(null);
   const [error, setError] = useState<string>('');
   const [isCameraStarted, setIsCameraStarted] = useState(false);
@@ -102,11 +108,45 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
         poseInstance.onResults(onResults);
         setPose(poseInstance);
 
+        // Initialize Hands
+        const handsInstance = new Hands({
+          locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+          }
+        });
+
+        handsInstance.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.7
+        });
+
+        setHands(handsInstance);
+
+        // Initialize FaceMesh
+        const faceMeshInstance = new FaceMesh({
+          locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+          }
+        });
+
+        faceMeshInstance.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: true,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.7
+        });
+
+        setFaceMesh(faceMeshInstance);
+
         const cameraInstance = new Camera(videoRef.current, {
           onFrame: async () => {
-            if (videoRef.current && poseInstance) {
+            if (videoRef.current && poseInstance && handsInstance && faceMeshInstance) {
               const startTime = performance.now();
               await poseInstance.send({ image: videoRef.current });
+              await handsInstance.send({ image: videoRef.current });
+              await faceMeshInstance.send({ image: videoRef.current });
               const processingTime = performance.now() - startTime;
               
               // Track processing times for latency calculation
@@ -190,7 +230,17 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
     }
   };
 
-  const onResults = (results: Results) => {
+  const resultsBuffer = useRef<{
+    pose?: any;
+    hands?: any;
+    face?: any;
+  }>({});
+
+  const processAllResults = () => {
+    const { pose: poseResults, hands: handResults, face: faceResults } = resultsBuffer.current;
+    
+    if (!poseResults) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -211,9 +261,9 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
     // Draw the video frame
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
     
-    if (results.poseLandmarks) {
+    if (poseResults.poseLandmarks) {
       // Calculate average confidence
-      const avgConfidence = results.poseLandmarks.reduce((sum, landmark) => 
+      const avgConfidence = poseResults.poseLandmarks.reduce((sum, landmark) => 
         sum + (landmark.visibility || 0), 0) / results.poseLandmarks.length;
       
       setPerformanceStats(prev => ({
@@ -222,7 +272,7 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
       }));
 
       // Convert MediaPipe landmarks to our format with enhanced confidence tracking
-      const landmarks = results.poseLandmarks.map(landmark => ({
+      const landmarks = poseResults.poseLandmarks.map(landmark => ({
         x: landmark.x,
         y: landmark.y,
         z: landmark.z,
@@ -231,17 +281,52 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
       }));
 
       // Draw pose connections in blue
-      drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {
+      drawConnectors(ctx, poseResults.poseLandmarks, POSE_CONNECTIONS, {
         color: '#0000FF',
         lineWidth: 3
       });
 
       // Draw landmarks as blue bullet points
-      drawLandmarks(ctx, results.poseLandmarks, {
+      drawLandmarks(ctx, poseResults.poseLandmarks, {
         color: '#0000FF',
         lineWidth: 2,
         radius: 6
       });
+
+      // Draw hand landmarks if available
+      if (handResults && handResults.multiHandLandmarks) {
+        handResults.multiHandLandmarks.forEach((handLandmarks: any, index: number) => {
+          const handedness = handResults.multiHandedness[index]?.label || 'Unknown';
+          const color = handedness === 'Left' ? '#FF6B6B' : '#4ECDC4';
+          
+          drawConnectors(ctx, handLandmarks, HAND_CONNECTIONS, {
+            color: color,
+            lineWidth: 2
+          });
+          
+          drawLandmarks(ctx, handLandmarks, {
+            color: color,
+            lineWidth: 1,
+            radius: 3
+          });
+        });
+      }
+
+      // Draw face mesh if available
+      if (faceResults && faceResults.multiFaceLandmarks) {
+        faceResults.multiFaceLandmarks.forEach((faceLandmarks: any) => {
+          drawConnectors(ctx, faceLandmarks, FACEMESH_TESSELATION, {
+            color: '#C0C0C070',
+            lineWidth: 1
+          });
+          
+          drawLandmarks(ctx, faceLandmarks, {
+            color: '#FFD700',
+            lineWidth: 1,
+            radius: 1
+          });
+        });
+      }
 
       // Reset transformation for text to keep it readable
       if (mirrorCamera) {
@@ -250,11 +335,61 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
       }
 
       // Draw landmark indices and names (always in correct orientation)
-      drawLandmarkData(ctx, results.poseLandmarks, canvas.width, canvas.height, mirrorCamera);
+      drawLandmarkData(ctx, poseResults.poseLandmarks, canvas.width, canvas.height, mirrorCamera);
+
+      // Process hand landmarks
+      let leftHandLandmarks, rightHandLandmarks;
+      if (handResults && handResults.multiHandLandmarks && handResults.multiHandedness) {
+        handResults.multiHandLandmarks.forEach((handLandmarks: any, index: number) => {
+          const handedness = handResults.multiHandedness[index]?.label;
+          const confidence = handResults.multiHandedness[index]?.score || 0;
+          
+          const processedLandmarks = handLandmarks.map((lm: any) => ({
+            x: lm.x,
+            y: lm.y,
+            z: lm.z,
+            visibility: 1,
+            confidence: confidence
+          }));
+          
+          if (handedness === 'Left') {
+            leftHandLandmarks = {
+              landmarks: processedLandmarks,
+              confidence,
+              handedness: 'Left' as const
+            };
+          } else if (handedness === 'Right') {
+            rightHandLandmarks = {
+              landmarks: processedLandmarks,
+              confidence,
+              handedness: 'Right' as const
+            };
+          }
+        });
+      }
+
+      // Process face landmarks
+      let faceLandmarks;
+      if (faceResults && faceResults.multiFaceLandmarks && faceResults.multiFaceLandmarks.length > 0) {
+        const faceData = faceResults.multiFaceLandmarks[0];
+        faceLandmarks = {
+          landmarks: faceData.map((lm: any) => ({
+            x: lm.x,
+            y: lm.y,
+            z: lm.z,
+            visibility: 1,
+            confidence: 0.9
+          })),
+          confidence: 0.9
+        };
+      }
 
       // Send pose results with enhanced metadata
       const poseResults: PoseResults = {
         landmarks,
+        leftHandLandmarks,
+        rightHandLandmarks,
+        faceLandmarks,
         timestamp: Date.now(),
         processingLatency: processingTimesRef.current[processingTimesRef.current.length - 1] || 0,
         confidence: avgConfidence
@@ -273,6 +408,31 @@ const PoseDetection: React.FC<PoseDetectionProps> = ({
     
     ctx.restore();
   };
+
+  const onResults = (results: Results) => {
+    resultsBuffer.current.pose = results;
+    processAllResults();
+  };
+
+  const onHandResults = (results: any) => {
+    resultsBuffer.current.hands = results;
+    processAllResults();
+  };
+
+  const onFaceResults = (results: any) => {
+    resultsBuffer.current.face = results;
+    processAllResults();
+  };
+
+  // Set up result handlers when components are initialized
+  useEffect(() => {
+    if (hands) {
+      hands.onResults(onHandResults);
+    }
+    if (faceMesh) {
+      faceMesh.onResults(onFaceResults);
+    }
+  }, [hands, faceMesh]);
 
   const drawLandmarkData = (ctx: CanvasRenderingContext2D, landmarks: any[], width: number, height: number, mirrored: boolean) => {
     const displayIndices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
