@@ -55,7 +55,7 @@ const DropJumpTest: React.FC<DropJumpTestProps> = ({ onAssessmentComplete }) => 
       // Initialize dual cameras
       const cameraSuccess = await dualCameraManager.initialize();
       if (!cameraSuccess) {
-        throw new Error('Failed to initialize dual cameras. Please ensure two cameras are connected.');
+        throw new Error('Failed to initialize cameras. Please ensure at least one camera is connected and grant camera permissions.');
       }
 
       const { camera1, camera2 } = dualCameraManager.getStreams();

@@ -36,6 +36,7 @@ const RecordingManager: React.FC<RecordingManagerProps> = ({
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [recordingName, setRecordingName] = useState('');
   const [motionRecordings, setMotionRecordings] = useState<MotionRecording[]>([]);
+  const [permissionError, setPermissionError] = useState<string>('');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -137,6 +138,7 @@ const RecordingManager: React.FC<RecordingManagerProps> = ({
 
   const startRecording = useCallback(async () => {
     try {
+      setPermissionError('');
       // Get display media (screen recording) or camera
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { mediaSource: 'screen' },
@@ -177,6 +179,17 @@ const RecordingManager: React.FC<RecordingManagerProps> = ({
       onStartRecording();
     } catch (error) {
       console.error('Failed to start recording:', error);
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError' || error.message.includes('Permission denied')) {
+          setPermissionError('Screen recording permission denied. Please allow screen sharing when prompted by your browser.');
+        } else if (error.name === 'NotSupportedError') {
+          setPermissionError('Screen recording is not supported in this browser. Please use Chrome, Firefox, or Edge.');
+        } else {
+          setPermissionError(`Recording failed: ${error.message}`);
+        }
+      } else {
+        setPermissionError('Failed to start recording. Please check your browser permissions.');
+      }
     }
   }, [onStartRecording]);
 
@@ -399,6 +412,31 @@ const RecordingManager: React.FC<RecordingManagerProps> = ({
               >
                 <span>Cancel</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Permission Error Display */}
+      {permissionError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-red-800">Recording Permission Error</h3>
+              <p className="mt-1 text-sm text-red-700">{permissionError}</p>
+              <div className="mt-3">
+                <button
+                  onClick={() => setPermissionError('')}
+                  className="text-sm bg-red-100 text-red-800 px-3 py-1 rounded-md hover:bg-red-200 transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           </div>
         </div>
